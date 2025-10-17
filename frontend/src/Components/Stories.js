@@ -1,77 +1,85 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Helmet } from "react-helmet";
-import { useParams } from "react-router-dom";
 import config from "../config";
+import Loader from "./Loader"; // 1. IMPORT THE LOADER
+
+// A simple spinner for individual media loading, as the main Loader is a full overlay.
+const MediaSpinner = () => (
+  <div className="absolute h-16 w-16 animate-spin rounded-full border-4 border-solid border-white border-t-transparent"></div>
+);
+
 
 export default function StatusViewer() {
   const navigate = useNavigate();
-  const { who } = useParams(); // gets value from /user/:id
+  const { who } = useParams();
 
-  const [stories, setStories] = useState(false);
+  // 2. UPDATE STATE
+  const [stories, setStories] = useState(null); // Use null to easily track initial fetch
   const [currentIndex, setCurrentIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [isMediaLoaded, setIsMediaLoaded] = useState(false); // State for individual media
 
   const intervalRef = useRef(null);
-  const videoRef = useRef(null); // Ref for the video element
+  const videoRef = useRef(null);
 
   const fetchStories = async () => {
-    const res = await fetch(`${config.BACKEND_URL}/${who}/fetch-stories/`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-    const data = await res.json();
-    if (data.stories.length) setStories(data.stories);
+    try {
+      const res = await fetch(`${config.BACKEND_URL}/${who}/fetch-stories/`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      setStories(data.stories || []); // Set stories or an empty array
+    } catch (error) {
+      console.error("Failed to fetch stories", error);
+      setStories([]); // Set empty array on error to remove loader
+    }
   };
 
   useEffect(() => {
     fetchStories();
-  }, []);
+  }, [who]);
 
-  // Effect to handle story changes and start the appropriate timer
+  // This effect resets the state for each new story
   useEffect(() => {
-    // Clear any existing interval when the story changes
-    clearInterval(intervalRef.current);
-    setProgress(0);
-    
-    const currentStory = stories[currentIndex];
-
-    // For images, start a 5-second timer immediately.
-    // For videos, the timer is started by the `handleMetadata` function.
-    if (stories && currentStory?.mediaType !== "video") {
-      startProgress(5000); // Default 5 seconds for images
+    if (stories) {
+      clearInterval(intervalRef.current);
+      setProgress(0);
+      setIsMediaLoaded(false); // Reset for the new story's media
     }
+  }, [currentIndex, stories]);
 
-    return () => clearInterval(intervalRef.current);
-  }, [currentIndex, stories]); 
+  // This effect starts the timer ONLY when the media has loaded
+  useEffect(() => {
+    if (isMediaLoaded) {
+      const currentStory = stories[currentIndex];
+      if (currentStory?.mediaType === "video" && videoRef.current) {
+        const videoDuration = videoRef.current.duration * 1000;
+        startProgress(videoDuration);
+      } else {
+        startProgress(5000); // 5 seconds for images
+      }
+    }
+  }, [isMediaLoaded, currentIndex]);
 
-  // This function now accepts a duration in milliseconds
+
   const startProgress = (duration) => {
     setProgress(0);
     clearInterval(intervalRef.current);
-
-    const increment = 100 / (duration / 100); // Calculate progress increment
-
+    const increment = 100 / (duration / 100);
     intervalRef.current = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
-          handleNext(); // go to next story automatically
+          handleNext();
           return 0;
         }
         return prev + increment;
       });
     }, 100);
   };
-
-  // Called when video metadata is loaded
-  const handleMetadata = () => {
-    if (videoRef.current) {
-      const videoDuration = videoRef.current.duration * 1000; // duration in ms
-      startProgress(videoDuration);
-    }
-  };
-
+  
   const handleNext = () => {
     if (currentIndex < stories.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -86,6 +94,11 @@ export default function StatusViewer() {
     }
   };
 
+  // 3. SHOW LOADER FOR INITIAL FETCH
+  if (stories === null) {
+    return <Loader isLoading={true} />;
+  }
+
   return (
     <>
       <Helmet>
@@ -93,78 +106,67 @@ export default function StatusViewer() {
         <meta name="description" content="View stories" />
       </Helmet>
 
-      {stories && (
+      {stories.length > 0 ? (
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-black text-white">
           {/* Progress bars */}
-          <div className="absolute top-2 left-0 right-0 flex gap-1 px-3 z-10">
+          <div className="absolute top-2 left-0 right-0 z-10 flex gap-1 px-3">
             {stories.map((_, i) => (
-              <div
-                key={i}
-                className="h-1 flex-1 bg-gray-600 rounded overflow-hidden"
-              >
+              <div key={i} className="h-1 flex-1 overflow-hidden rounded bg-gray-600">
                 <div
                   className="h-1 bg-white"
                   style={{
-                    transition: i === currentIndex ? "width 100ms linear" : "none",
-                    width:
-                      i < currentIndex
-                        ? "100%"
-                        : i === currentIndex
-                        ? `${progress}%`
-                        : "0%",
+                    transition: i === currentIndex && isMediaLoaded ? "width 100ms linear" : "none",
+                    width: i < currentIndex ? "100%" : i === currentIndex ? `${progress}%` : "0%",
                   }}
                 />
               </div>
             ))}
           </div>
           
-          <div className="absolute top-8 left-4 z-10 text-white font-semibold">
+          <div className="absolute top-8 left-4 z-10 font-semibold text-white">
              {stories[currentIndex].title}
           </div>
 
-          {/* Conditional rendering for Image or Video */}
-          <div className="w-full max-w-md h-[80vh] flex items-center justify-center">
-             {stories[currentIndex]?.mediaType === "video" ? (
+          <div className="relative flex h-[80vh] w-full max-w-md items-center justify-center">
+            {/* 4. SHOW SPINNER FOR EACH STORY'S MEDIA */}
+            {!isMediaLoaded && <MediaSpinner />}
+            
+            {stories[currentIndex]?.mediaType === "video" ? (
               <video
                 ref={videoRef}
                 src={stories[currentIndex]?.media}
-                className="w-full h-full object-contain rounded-lg"
+                className={`h-full w-full rounded-lg object-contain ${isMediaLoaded ? 'visible' : 'invisible'}`}
                 autoPlay
                 muted
                 playsInline
-                onLoadedMetadata={handleMetadata} // Start timer on load
+                onCanPlay={() => setIsMediaLoaded(true)} // Set loaded to true
               />
             ) : (
               <img
                 src={stories[currentIndex]?.media}
                 alt="status"
-                className="w-full h-full object-contain rounded-lg"
+                className={`h-full w-full rounded-lg object-contain ${isMediaLoaded ? 'visible' : 'invisible'}`}
+                onLoad={() => setIsMediaLoaded(true)} // Set loaded to true
               />
             )}
           </div>
          
-
-          {/* Manual controls */}
-          <div className="flex gap-4 mt-4">
+          <div className="mt-4 flex gap-4">
             <button
               onClick={handlePrev}
               disabled={currentIndex === 0}
-              className="px-4 py-2 bg-gray-700 rounded disabled:opacity-40"
+              className="rounded bg-gray-700 px-4 py-2 disabled:opacity-40"
             >
               Prev
             </button>
-            <button
-              onClick={handleNext}
-              className="px-4 py-2 bg-green-600 rounded"
-            >
+            <button onClick={handleNext} className="rounded bg-green-600 px-4 py-2">
               {currentIndex === stories.length - 1 ? "Finish" : "Next"}
             </button>
           </div>
         </div>
-      )}
-      {!stories && (
+      ) : (
         <p>
-          <b className="text-center block text-black">
+          <b className="block text-center text-black">
             Not uploaded any story!!
           </b>
         </p>

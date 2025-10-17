@@ -4,14 +4,18 @@ import { User } from "lucide-react";
 import { useEffect,useState } from "react";
 import { useNavigate } from "react-router-dom";
 import config from "../config";
+import Loader from "../Components/Loader";
+
 export default function ViewProfileAfterLogin() {
   // local state for input fields
   const [name, setName] = useState("");
   const navigator = useNavigate()
   const [username, setUsername] = useState("");
+  const [isloading,setIsLoading] = useState(false)
 
     const fetchInfo = async () => {
       try {
+        setIsLoading(true)
         const res = await fetch(`${config.BACKEND_URL}/`, {
           method: "POST",
           credentials: "include",
@@ -19,6 +23,7 @@ export default function ViewProfileAfterLogin() {
         });
 
         const data = await res.json();
+        setIsLoading(false)
         if (res.ok) {
             setName(data.name)
             setUsername(data.username)
@@ -37,6 +42,7 @@ export default function ViewProfileAfterLogin() {
   // simple handler for save (you can connect API later)
   const saveInfo = async () => {
     try {
+      setIsLoading(true)
       const res = await fetch(`${config.BACKEND_URL}/modify-profile`, {
         method: "POST",
         body:JSON.stringify({name,username}),
@@ -46,6 +52,7 @@ export default function ViewProfileAfterLogin() {
 
       const data = await res.json();
       if (res.ok) {
+        setIsLoading(false)
         navigator(`${data.route}`)
         //console.log("User verified successfully");
       }
@@ -59,6 +66,8 @@ export default function ViewProfileAfterLogin() {
   };
 
   return (
+    <>
+    <Loader loading={isloading}></Loader>
     <div className="text-black flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       {/* Main profile card */}
       <motion.div
@@ -123,5 +132,6 @@ export default function ViewProfileAfterLogin() {
         </div>
       </motion.div>
     </div>
+    </>
   );
 }

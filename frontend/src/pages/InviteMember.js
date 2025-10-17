@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import config from "../config";
+
 
 export default function InviteMember() {
   const [email, setEmail] = useState("");

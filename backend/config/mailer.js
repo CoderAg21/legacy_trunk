@@ -1,25 +1,21 @@
 // config/mailer.js
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+const resend = new Resend(process.env.RESEND_API);
 
+// sendMail(to, subject, html) — reusable mail sending function
 async function sendMail(to, subject, html) {
   try {
-    await transporter.sendMail({
-      from: `"Family App" <${process.env.EMAIL_USER}>`,
+    const response = await resend.emails.send({
+      from: process.env.EMAIL_FROM,
       to,
       subject,
       html,
     });
-    //console.log(" Email sent to:", to);
+
+    console.log("Email sent:", response.data?.id || "OK");
   } catch (error) {
-    //console.error(" Error sending email:", error.message);
+    console.error("Email error:", error.message);
   }
 }
 

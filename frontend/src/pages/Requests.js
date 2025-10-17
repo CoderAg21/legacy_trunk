@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import config from "../config";
+import Loader from "../Components/Loader";
 
 export default function Requests() {
   const [family, setFamily] = useState(null);
@@ -46,6 +47,7 @@ export default function Requests() {
   // Approve/Reject a request
   const handleAction = async (requestId,familyId, action) => {
     try {
+      setLoading(true)
       const res = await fetch(
         `${config.BACKEND_URL}/join-family/requests/${familyId}/${requestId}/${action}`,
         {
@@ -60,6 +62,7 @@ export default function Requests() {
       setRequests((prev) => prev.filter((r) => r._id !== requestId));
 
       if (res.ok) {
+        setLoading(false)
       } else {
         alert(data.message || "Action failed");
       }
@@ -68,14 +71,9 @@ export default function Requests() {
     }
   };
 
-  if (loading)
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <p className="text-gray-600 text-lg">Loading...</p>
-      </div>
-    );
-
   return (
+    <>
+    <Loader isLoading={loading}/>
     <div className="text-black min-h-screen flex flex-col items-center py-10 px-4">
       <motion.div
         className="max-w-4xl w-full rounded-2xl shadow-lg p-6"
@@ -91,7 +89,7 @@ export default function Requests() {
             Family: {family?.family_name || "N/A"}
           </p>
           <a
-            href="/"
+            href="/dashboard"
             className="inline-block mt-3 bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm hover:bg-gray-300 transition"
           >
             Back to Home
@@ -144,5 +142,6 @@ export default function Requests() {
         )}
       </motion.div>
     </div>
+    </>
   );
 }

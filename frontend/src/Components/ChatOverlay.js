@@ -78,8 +78,8 @@ export default function ChatOverlay({
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className="fixed right-0 top-0 bottom-0 w-full sm:w-96 bg-white shadow-2xl z-50 flex flex-col"
           >
-            <div className="p-4 border-b bg-gradient-to-r from-emerald-50 to-green-50">
-              <div className="flex items-center justify-between">
+            <div className="p-4 border-b bg-gradient-to-r from-emerald-50 to-green-50 text-black">
+              <div className="flex items-center justify-between text-black">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-400 to-emerald-600 flex items-center justify-center text-white font-semibold">
                     {member?.name?.charAt(0).toUpperCase()}
@@ -142,7 +142,7 @@ export default function ChatOverlay({
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSend()}
                   placeholder="Type a message..."
-                  className="flex-1 px-4 py-3 rounded-full border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  className="text-black flex-1 px-4 py-3 rounded-full border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
                 <motion.button
                   whileHover={{ scale: 1.05 }}
