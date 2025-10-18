@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Upload, BookOpen, Menu } from "lucide-react";
 import { Helmet } from "react-helmet";
 import config from "../config";
+import Loader  from "../Components/Loader"
 
 // Components
 import Navbar2 from "../Components/Navbar2";
@@ -44,68 +45,70 @@ export default function Dashboard() {
   const [familyName, setFamilyName] = useState("");
   const [initialMsg, setInitialMsg] = useState([]);
   const [isAdmin,setIsAdmin] = useState('')
+  const [loading,setLoading] = useState(false)
 
   const observerRefs = useRef([]);
 
   // 🔹 Verify user authentication and fetch family members
+  const verifyUser = async () => {
+    try {
+      const res = await fetch(`${config.BACKEND_URL}/`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setFamilyName(data.family_name);
+        setYourId(data._id);
+        setIsAdmin(data.isAdmin)
+       
+        //console.log("User verified successfully");
+      }
+    } catch (error) {
+      console.error("User verification failed:", error.message);
+    }
+  };
+
+  const fetchMembers = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch(`${config.BACKEND_URL}/family/members`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+      if (res.ok && data.members) {
+        setLoading(false)
+        setMembers(data.members);
+        //console.log("Family members loaded:", data.members.length);
+      }
+    } catch (error) {
+      console.error("Error fetching members:", error.message);
+    }
+  };
+  
+  const fetchAllPosts = async () => {
+    try {
+      const res = await fetch(`${config.BACKEND_URL}/family/fetch-all-posts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await res.json();
+      //console.log("Family posts loaded:", data.items);
+      if (res.ok) {
+        setMemories(data.items);
+      }
+    } catch (error) {
+      console.error("Error fetching members:", error.message);
+    }
+  };
   useEffect(() => {
-    const verifyUser = async () => {
-      try {
-        const res = await fetch(`${config.BACKEND_URL}/`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-          setFamilyName(data.family_name);
-          setYourId(data._id);
-          setIsAdmin(data.isAdmin)
-         
-          //console.log("User verified successfully");
-        }
-      } catch (error) {
-        console.error("User verification failed:", error.message);
-      }
-    };
-
-    const fetchMembers = async () => {
-      try {
-        const res = await fetch(`${config.BACKEND_URL}/family/members`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        const data = await res.json();
-        if (res.ok && data.members) {
-          setMembers(data.members);
-          //console.log("Family members loaded:", data.members.length);
-        }
-      } catch (error) {
-        console.error("Error fetching members:", error.message);
-      }
-    };
-    
-    const fetchAllPosts = async () => {
-      try {
-        const res = await fetch(`${config.BACKEND_URL}/family/fetch-all-posts`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        const data = await res.json();
-        //console.log("Family posts loaded:", data.items);
-        if (res.ok) {
-          setMemories(data.items);
-        }
-      } catch (error) {
-        console.error("Error fetching members:", error.message);
-      }
-    };
-    
 
     fetchAllPosts();
     verifyUser();
@@ -169,6 +172,7 @@ export default function Dashboard() {
 
   return (
     <>
+    <Loader isLoading = {loading}/>
       <Helmet>
         <title>Dashboard</title>
         <meta name="description" content="Welcome to your family dashboard" />

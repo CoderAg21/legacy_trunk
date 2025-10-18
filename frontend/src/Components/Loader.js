@@ -1,12 +1,4 @@
-// src/components/Loader.js
 
-import React from 'react';
-
-/**
- * A reusable loader component.
- * @param {object} props - The component props.
- * @param {boolean} props.isLoading - If true, the loader is displayed.
- */
 export default function Loader({ isLoading }) {
   // If not loading, render nothing.
   if (!isLoading) {
