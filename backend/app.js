@@ -35,7 +35,11 @@ mongoose.connect(process.env.MONGO_URI);
 
 // Session and Passport initialization
 app.use(
-  session({ secret: process.env.SECRET, resave: false, saveUninitialized: false })
+  session({
+    secret: process.env.SECRET,
+    resave: false,
+    saveUninitialized: false,
+  })
 );
 app.use(passport.initialize());
 app.use(passport.session());
@@ -62,70 +66,6 @@ app.get(
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-// Google authentication callback and user processing
-app.get("/auth/google/callback", googleAuth, async (req, res) => {
-  try {
-    const userId = req.user._id;
-    const user = await User.findById(userId);
-
-  res.cookie("authToken", req.user._id, {
-  httpOnly: true,
-  secure: true,   // only send over HTTPS
-  sameSite: "none",
-  maxAge: 24*60*60*1000
-});
-
-
-    // Auto-join family if there's a pending invite for the user
-    const pendingFamily = await Family.findOne({
-      "invites.email": user.email,
-      "invites.status": "pending",
-    });
-    if (pendingFamily) {
-      const invite = pendingFamily.invites.find(
-        (i) => i.email === user.email && i.status === "pending"
-      );
-      if (!pendingFamily.members.includes(user._id)) {
-        pendingFamily.members.push(user._id);
-        invite.status = "accepted";
-        await pendingFamily.save();
-        user.family_id = pendingFamily._id;
-        await user.save();
-      }
-    }
-
-    // Redirect user based on profile completion
-    if (!user.username || !user.age)
-      return res.redirect(`${process.env.FRONTEND_URL}/profile`);
-    if (!user.family_id)
-      return res.redirect(`${process.env.FRONTEND_URL}/family-select`);
-    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
-  } catch (err) {
-    res.status(500).send("Server error");
-  }
-});
-
-// Dashboard route that fetches user and family details
-app.post("/", isLoggedIn, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id);
-    const adminFamilies = await Family.find({ admin: req.user._id });
-    const family = await Family.findById(user.family_id);
-    res.json({
-      name: user.name,
-      username: user.username,
-      isAdmin: adminFamilies.length > 0,
-      adminFamilies,
-      family_name: family ? family.family_name : "",
-      _id: user._id,
-      family_id:user.family_id
-      
-    });
-  } catch (err) {
-    res.status(500).send("Server error");
-  }
-});
-
 app.post("/modify-profile", isLoggedIn, async (req, res) => {
   try {
     const { username, name } = req.body;
@@ -145,10 +85,12 @@ app.post("/modify-profile", isLoggedIn, async (req, res) => {
       { username, name },
       { new: true }
     );
-    if (!updatedUser) return res.json({ route: `${process.env.FRONTEND_URL}/signup` });
+    if (!updatedUser)
+      return res.json({ route: `${process.env.FRONTEND_URL}/signup` });
     res.json({ route: "/dashboard" });
   } catch (err) {
-    res.json({ msg: "Error in connecting, we will get back to you." });
+    console.error("Error modifying profile:", err);
+    res.status(500).json({ msg: "Server error during profile modification." });
   }
 });
 
@@ -174,13 +116,101 @@ app.post("/complete-profile", isLoggedIn, async (req, res) => {
       { username, age },
       { new: true }
     );
-    if (!updatedUser) return res.json({ route: `${process.env.FRONTEND_URL}/signup` });
-    res.json({ route: "/family-select" });
+    if (!updatedUser) {
+        return res.json({ route: `${process.env.FRONTEND_URL}/signup` });
+    }
+
+    // **MODIFIED LOGIC**
+    // Redirect based on whether the user already has a family
+    if (updatedUser.family_id) {
+      res.json({ route: "/dashboard" });
+    } else {
+      res.json({ route: "/family-select" });
+    }
+
   } catch (err) {
-    res.json({ msg: "Error in connecting, we will get back to you." });
+    console.error("Error completing profile:", err);
+    res.status(500).json({ msg: "Server error during profile completion." });
   }
 });
 
+// Google authentication callback and user processing
+app.get("/auth/google/callback", googleAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    // It's safer to fetch a fresh user object to avoid stale data
+    const user = await User.findById(userId);
+
+    if (!user) {
+        return res.redirect(`${process.env.FRONTEND_URL}/login`);
+    }
+
+    res.cookie("authToken", req.user._id, {
+      httpOnly: true,
+      secure: true, // only send over HTTPS
+      sameSite: "none",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    // Auto-join family if there's a pending invite for the user
+    const pendingFamily = await Family.findOne({
+      "invites.email": user.email,
+      "invites.status": "pending",
+    });
+
+    if (pendingFamily) {
+      const invite = pendingFamily.invites.find(
+        (i) => i.email === user.email && i.status === "pending"
+      );
+      // Ensure the user is not already a member before adding them
+      if (invite && !pendingFamily.members.some(memberId => memberId.equals(user._id))) {
+        pendingFamily.members.push(user._id);
+        invite.status = "accepted";
+        await pendingFamily.save();
+        user.family_id = pendingFamily._id;
+        await user.save();
+      }
+    }
+    
+    // Redirect user based on profile completion status
+    if (!user.username || !user.age) {
+        return res.redirect(`${process.env.FRONTEND_URL}/profile`);
+    }
+    
+    // Redirect based on family status
+    if (!user.family_id) {
+      // Corrected console log for clarity
+      console.log("User has no family, redirecting to /family-select");
+      return res.redirect(`${process.env.FRONTEND_URL}/family-select`);
+    }
+    
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+
+  } catch (err) {
+    console.error("Error in Google auth callback:", err);
+    res.status(500).send("Server error");
+  }
+});
+
+// Dashboard route that fetches user and family details
+app.post("/", isLoggedIn, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    const adminFamilies = await Family.find({ admin: req.user._id });
+    const family = await Family.findById(user.family_id);
+    res.json({
+      name: user.name,
+      username: user.username,
+      isAdmin: adminFamilies.length > 0,
+      adminFamilies,
+      family_name: family ? family.family_name : "",
+      _id: user._id,
+      family_id: user.family_id,
+    });
+  } catch (err) {
+    res.status(500).send("Server error");
+  }
+});
 // Handle new family creation
 app.post("/create-family", isLoggedIn, async (req, res) => {
   try {
@@ -189,8 +219,7 @@ app.post("/create-family", isLoggedIn, async (req, res) => {
 
     // Prevent duplicate family IDs
     const existingFamily = await Family.findOne({ family_id });
-    if (existingFamily)
-      return res.status(400).send("Family ID already taken.");
+    if (existingFamily) return res.status(400).send("Family ID already taken.");
 
     // Save new family and assign to user
     const family = new Family({
@@ -232,11 +261,12 @@ app.post("/join-family/invite", isLoggedIn, async (req, res) => {
     // 3. Send invitation email
     const inviteLink = `http://legacy-trunk.vercel.app/join-family/${familyId}/invite/${token}`;
     await sendMail(
-      email,
+      user.email,
+      "Family App <onboarding@resend.dev>",
       "You're invited to join a family 🎉",
-      `<p>Hi there,</p>
-       <p>You have been invited to join the family <b>${family.family_name}</b>.</p>
-       <p>Click <a href="${inviteLink}">here</a> to sign in and join automatically!</p>`
+      `<p>Hi there, I am ${user.name}</p>
+   <p>You have been invited to join the family <b>${family.family_name}</b>.</p>
+   <p>Click <a href="${inviteLink}">here</a> to sign in and join automatically!</p>`
     );
 
     res.json({ msg: "succesfully" });
@@ -562,8 +592,6 @@ const uploadStory = multer({
   limits: { fileSize: 30 * 1024 * 1024 },
 });
 
-
-
 // Middleware
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -634,12 +662,14 @@ app.post(
         media: mediaFiles,
         tags,
         description,
-
       });
-      
 
       await newItem.save();
-      res.json({ message: "Media added successfully", media: mediaFiles,"_id":newItem._id });
+      res.json({
+        message: "Media added successfully",
+        media: mediaFiles,
+        _id: newItem._id,
+      });
     } catch (err) {
       res.status(500).json({ message: "Server error" });
     }
@@ -675,11 +705,13 @@ app.post(
         { $set: updateData }, // Use $set to update only specified fields
         { new: true } // Return the updated document
       );
-      
+
       if (!modifiedItem) {
-        return res.status(404).json({ message: "Post not found or update failed." });
+        return res
+          .status(404)
+          .json({ message: "Post not found or update failed." });
       }
-      
+
       // The .save() call is not needed after findOneAndUpdate
       res.json({ message: "Media updated successfully", item: modifiedItem });
     } catch (err) {
@@ -781,15 +813,12 @@ app.post(
   }
 );
 
-
 // get-stories
 app.get("/get-stories/:userId", async (req, res) => {
- 
   const { userId } = req.params;
-  const stories = await Story.find({ user_id:userId });
+  const stories = await Story.find({ user_id: userId });
   res.json({ stories });
 });
-
 
 //fetch-stories
 app.post("/:who/fetch-stories", isLoggedIn, async (req, res) => {
@@ -829,114 +858,155 @@ const axios = require("axios");
 
 // Replace your existing download-pdf route with this one
 app.post("/download-pdf", async (req, res) => {
-    try {
-        const { familyId } = req.body;
-       
-        const posts = await Item.find({ family_id: familyId }).sort({ createdAt: -1 });
+  try {
+    const { familyId } = req.body;
 
-        if (!posts || posts.length === 0) {
-            return res.status(404).json({ message: "No posts found for this user." });
-        }
+    const posts = await Item.find({ family_id: familyId }).sort({
+      createdAt: -1,
+    });
 
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", 'attachment; filename="LegacyTrunk_Memories_Centered.pdf"');
-
-        const doc = new PDFDocument({ autoFirstPage: false, margin: 50 });
-        doc.pipe(res);
-
-        // --- Helper Function to Add a Frame to Each Page ---
-        const addPageFrame = () => {
-            doc.rect(30, 30, doc.page.width - 60, doc.page.height - 60)
-               .lineWidth(1)
-               .strokeColor("#dddddd")
-               .stroke();
-        };
-
-        // --- Auto-apply the frame whenever a new page is added ---
-        doc.on('pageAdded', addPageFrame);
-
-        // --- Title Page (Already Centered) ---
-        doc.addPage();
-        doc.fontSize(24).font("Helvetica-Bold").text("Your Family Memories", { align: "center" });
-        doc.moveDown(0.5);
-        doc.fontSize(14).font("Helvetica").text("From Your Legacy Trunk", { align: "center" });
-        doc.moveDown(2);
-        doc.fontSize(10).font("Helvetica-Oblique")
-           .text(`Generated on: ${new Date().toLocaleDateString()}`, { align: "center", y: doc.page.height - 100 });
-
-        // --- Loop Through Posts ---
-        for (const post of posts) {
-            doc.addPage();
-            
-            // --- Post Text / Description (NOW CENTERED) ---
-            if (post.text) {
-                doc.fontSize(14).font("Helvetica-Bold").fillColor("black").text(post.text, { align: "center" });
-                doc.moveDown(0.5);
-            }
-            if(post.description){
-                doc.fontSize(11).font("Helvetica").text(post.description, { align: "center" });
-                doc.moveDown(1);
-            }
-             doc.fontSize(9).font("Helvetica-Oblique").fillColor("#888888")
-               .text(`Posted on: ${new Date(post.createdAt).toLocaleString()}`, { align: 'center' });
-            doc.moveDown(1.5);
-
-            // --- Post Media (Images and Videos) ---
-            if (post.media && post.media.length > 0) {
-                for (const media of post.media) {
-                    if (media.type === "image") {
-                        try {
-                            const imageResponse = await axios.get(media.url, { responseType: 'arraybuffer' });
-                            const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-                            doc.image(imageBuffer, {
-                                fit: [450, 400],
-                                align: 'center',
-                                valign: 'center'
-                            });
-                            doc.moveDown(1);
-                        } catch (error) {
-                            doc.fillColor("red").text(`[Image could not be loaded]`, { align: 'center' });
-                        }
-                    } else if (media.type === "video") {
-                        try {
-                            // Create a Cloudinary URL for the video thumbnail
-                            const thumbnailUrl = media.url
-                                .replace('/upload/', '/upload/w_450,h_250,c_fill,so_2/')
-                                .replace(/\.(mp4|mov|avi|wmv)$/, ".jpg");
-
-                            const thumbResponse = await axios.get(thumbnailUrl, { responseType: 'arraybuffer' });
-                            const thumbBuffer = Buffer.from(thumbResponse.data, 'binary');
-
-                            // Embed the thumbnail image
-                            doc.image(thumbBuffer, {
-                                fit: [450, 250],
-                                align: 'center',
-                                valign: 'center'
-                            });
-                            doc.moveDown(1);
-                            
-                            // --- Add the styled, centered "Watch Video" link ---
-                            doc.font('Helvetica-Bold').fontSize(12).fillColor('#0066cc')
-                               .text("▶ Watch Video", {
-                                   align: 'center', // This ensures the link is centered
-                                   link: media.url,
-                                   underline: true
-                               });
-                            doc.moveDown(1);
-
-                        } catch (error) {
-                            doc.fillColor("red").text(`[Video thumbnail could not be loaded]`, { align: 'center' });
-                        }
-                    }
-                    doc.moveDown(1.5); // Space after each media item
-                }
-            }
-        }
-
-        doc.end();
-    } catch (err) {
-        res.status(500).json({ message: "Failed to generate PDF" });
+    if (!posts || posts.length === 0) {
+      return res.status(404).json({ message: "No posts found for this user." });
     }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="LegacyTrunk_Memories_Centered.pdf"'
+    );
+
+    const doc = new PDFDocument({ autoFirstPage: false, margin: 50 });
+    doc.pipe(res);
+
+    // --- Helper Function to Add a Frame to Each Page ---
+    const addPageFrame = () => {
+      doc
+        .rect(30, 30, doc.page.width - 60, doc.page.height - 60)
+        .lineWidth(1)
+        .strokeColor("#dddddd")
+        .stroke();
+    };
+
+    // --- Auto-apply the frame whenever a new page is added ---
+    doc.on("pageAdded", addPageFrame);
+
+    // --- Title Page (Already Centered) ---
+    doc.addPage();
+    doc
+      .fontSize(24)
+      .font("Helvetica-Bold")
+      .text("Your Family Memories", { align: "center" });
+    doc.moveDown(0.5);
+    doc
+      .fontSize(14)
+      .font("Helvetica")
+      .text("From Your Legacy Trunk", { align: "center" });
+    doc.moveDown(2);
+    doc
+      .fontSize(10)
+      .font("Helvetica-Oblique")
+      .text(`Generated on: ${new Date().toLocaleDateString()}`, {
+        align: "center",
+        y: doc.page.height - 100,
+      });
+
+    // --- Loop Through Posts ---
+    for (const post of posts) {
+      doc.addPage();
+
+      // --- Post Text / Description (NOW CENTERED) ---
+      if (post.text) {
+        doc
+          .fontSize(14)
+          .font("Helvetica-Bold")
+          .fillColor("black")
+          .text(post.text, { align: "center" });
+        doc.moveDown(0.5);
+      }
+      if (post.description) {
+        doc
+          .fontSize(11)
+          .font("Helvetica")
+          .text(post.description, { align: "center" });
+        doc.moveDown(1);
+      }
+      doc
+        .fontSize(9)
+        .font("Helvetica-Oblique")
+        .fillColor("#888888")
+        .text(`Posted on: ${new Date(post.createdAt).toLocaleString()}`, {
+          align: "center",
+        });
+      doc.moveDown(1.5);
+
+      // --- Post Media (Images and Videos) ---
+      if (post.media && post.media.length > 0) {
+        for (const media of post.media) {
+          if (media.type === "image") {
+            try {
+              const imageResponse = await axios.get(media.url, {
+                responseType: "arraybuffer",
+              });
+              const imageBuffer = Buffer.from(imageResponse.data, "binary");
+              doc.image(imageBuffer, {
+                fit: [450, 400],
+                align: "center",
+                valign: "center",
+              });
+              doc.moveDown(1);
+            } catch (error) {
+              doc
+                .fillColor("red")
+                .text(`[Image could not be loaded]`, { align: "center" });
+            }
+          } else if (media.type === "video") {
+            try {
+              // Create a Cloudinary URL for the video thumbnail
+              const thumbnailUrl = media.url
+                .replace("/upload/", "/upload/w_450,h_250,c_fill,so_2/")
+                .replace(/\.(mp4|mov|avi|wmv)$/, ".jpg");
+
+              const thumbResponse = await axios.get(thumbnailUrl, {
+                responseType: "arraybuffer",
+              });
+              const thumbBuffer = Buffer.from(thumbResponse.data, "binary");
+
+              // Embed the thumbnail image
+              doc.image(thumbBuffer, {
+                fit: [450, 250],
+                align: "center",
+                valign: "center",
+              });
+              doc.moveDown(1);
+
+              // --- Add the styled, centered "Watch Video" link ---
+              doc
+                .font("Helvetica-Bold")
+                .fontSize(12)
+                .fillColor("#0066cc")
+                .text("▶ Watch Video", {
+                  align: "center", // This ensures the link is centered
+                  link: media.url,
+                  underline: true,
+                });
+              doc.moveDown(1);
+            } catch (error) {
+              doc
+                .fillColor("red")
+                .text(`[Video thumbnail could not be loaded]`, {
+                  align: "center",
+                });
+            }
+          }
+          doc.moveDown(1.5); // Space after each media item
+        }
+      }
+    }
+
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ message: "Failed to generate PDF" });
+  }
 });
 
 // Logout route to destroy session and clear cookies
