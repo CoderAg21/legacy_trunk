@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send } from "lucide-react";
 import { io } from "socket.io-client";
 import config from "../config";
+import Loader from "./Loader"
 
 const socket = io(config.BACKEND_URL, {
   autoConnect: false,
@@ -18,15 +19,19 @@ export default function ChatOverlay({
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const messagesEndRef = useRef(null);
+  const [loading,setLoading] = useState(false)
 
   useEffect(() => {
+    setLoading(true)
+    setMessages([]);
     if (!isOpen || !yourId) {
       return;
     }
 
     socket.connect();
     socket.emit("join", yourId);
-    setMessages([]);
+  
+    setLoading(false)
     socket.off("receive_message");
 
     const receiveMessageHandler = (newMessage) => {
@@ -98,6 +103,7 @@ export default function ChatOverlay({
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+              <Loader isLoading={loading}></Loader>
               {[...initialMsg, ...messages].map((msg, index) => (
                 <motion.div
                   key={msg._id || index}

@@ -2,10 +2,8 @@ import React, { useState } from "react";
 import { Plus, Key, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import config from "../config";
+import Loader from "./Loader";
 
-// In a real application, this would be in a config file or environment variable.
-// For this single-file component, we'll define it here.
-const BACKEND_URL = "/api"; // Using a relative path for API calls
 
 export default function FamilySelection() {
   // --- STATE MANAGEMENT ---
@@ -16,6 +14,7 @@ export default function FamilySelection() {
   const [adminUsername, setAdminUsername] = useState(""); // For joining by username
   const [familyName, setFamilyName] = useState(""); // For creation
   const [generatedKey, setGeneratedKey] = useState("");
+  
   const navigate = useNavigate();
 
   // --- HELPER FUNCTIONS ---
