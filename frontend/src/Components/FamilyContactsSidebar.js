@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import config from "../config";
 
+
 export default function FamilyContactsSidebar({
   familyName,
   members,
@@ -15,7 +16,6 @@ export default function FamilyContactsSidebar({
   const [storiesData, setStoriesData] = useState([]);
   const navigate = useNavigate();
 
-  
   useEffect(() => {
     const fetchAllMemberStories = async () => {
       if (!members || members.length === 0) return;
@@ -36,12 +36,12 @@ export default function FamilyContactsSidebar({
               return res.json();
             })
             .catch((err) => {
-                  console.error("Error fetching for member:", member.id, err);
+              console.error("Error fetching for member:", member.id, err);
               return { stories: [] };
             });
         });
 
-      const storyResults = await Promise.all(storyPromises);
+        const storyResults = await Promise.all(storyPromises);
 
         const formattedStories = storyResults.map((data) => ({
           stories: data.stories || [],
@@ -101,6 +101,7 @@ export default function FamilyContactsSidebar({
             {members.map((member, index) => (
               <motion.div
                 key={member.id}
+                onClick={() => onContactClick(member)} // Main click action here
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
@@ -110,7 +111,10 @@ export default function FamilyContactsSidebar({
                 <div className="relative">
                   {/* Avatar with dynamic box-shadow for stories */}
                   <div
-                    onClick={() => checkStatus(member.id)}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevents parent onClick
+                      checkStatus(member.id);
+                    }}
                     className="w-14 h-14 rounded-full bg-gradient-to-br from-teal-400 to-emerald-600 flex items-center justify-center shadow-md cursor-pointer transition-all duration-300"
                     style={{
                       boxShadow:
@@ -137,16 +141,13 @@ export default function FamilyContactsSidebar({
                 </div>
 
                 {/* Member name and message icon */}
-                <div
-                  className="flex-1 min-w-0"
-                  onClick={() => onContactClick(member)}
-                >
+                <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">
                     {member.name}
                   </h3>
                 </div>
 
-                <div onClick={() => onContactClick(member)}>
+                <div>
                   <MessageCircle className="w-5 h-5 text-gray-400 group-hover:text-emerald-500 transition-colors" />
                 </div>
               </motion.div>
@@ -157,4 +158,3 @@ export default function FamilyContactsSidebar({
     </>
   );
 }
-

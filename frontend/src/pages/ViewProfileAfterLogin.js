@@ -67,7 +67,7 @@ export default function ViewProfileAfterLogin() {
 
   return (
     <>
-    <Loader loading={isloading}></Loader>
+    <Loader isloading={isloading}></Loader>
     <div className="text-black flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
       {/* Main profile card */}
       <motion.div
